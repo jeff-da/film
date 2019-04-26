@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2017-present, Facebook, Inc.
+# Origional file copyright 2017-present, Facebook, Inc.
 # All rights reserved.
 #
 # This source code is licensed under the license found in the
@@ -18,12 +18,14 @@ import os
 import h5py
 import numpy as np
 
+from string import digits
+
 import vr.programs
 from vr.preprocess import tokenize, encode, build_vocab
 
 
 """
-Preprocessing script for CLEVR question files.
+Preprocessing script for NLVR question files.
 """
 
 
@@ -34,7 +36,7 @@ parser.add_argument('--input_questions_json', required=True)
 parser.add_argument('--input_vocab_json', default='')
 parser.add_argument('--expand_vocab', default=0, type=int)
 parser.add_argument('--unk_threshold', default=1, type=int)
-parser.add_argument('--encode_unk', default=0, type=int)
+parser.add_argument('--encode_unk', default=1, type=int)
 
 parser.add_argument('--output_h5_file', required=True)
 parser.add_argument('--output_vocab_json', default='')
@@ -61,17 +63,19 @@ def main(args):
 
   print('Loading data')
   with open(args.input_questions_json, 'r') as f:
-    questions = json.load(f)['questions']
+    questions = []
+    for line in f:
+        questions.append(json.loads(line))
 
   # Either create the vocab or load it from disk
   if args.input_vocab_json == '' or args.expand_vocab == 1:
     print('Building vocab')
-    if 'answer' in questions[0]:
+    if 'label' in questions[0]:
       answer_token_to_idx = build_vocab(
-        (q['answer'] for q in questions)
+        (q['label'] for q in questions)
       )
     question_token_to_idx = build_vocab(
-      (q['question'] for q in questions),
+      (q['sentence'] for q in questions),
       min_token_count=args.unk_threshold,
       punct_to_keep=[';', ','], punct_to_remove=['?', '.']
     )
@@ -118,14 +122,13 @@ def main(args):
   answers = []
   types = []
   for orig_idx, q in enumerate(questions):
-    question = q['question']
-    if 'program' in q:
-      types += [q['program'][-1]['function']]
+    question = q['sentence']
 
     orig_idxs.append(orig_idx)
-    image_idxs.append(q['image_index'])
-    if 'question_family_index' in q:
-      question_families.append(q['question_family_index'])
+    if "LEFT" in q["image_attention"]: # LEFT IMG
+        image_idxs.append(int(''.join(c for c in (q['identifier'] + "-img0") if c in digits)))
+    else: # RIGHT IMG
+        image_idxs.append(int(''.join(c for c in (q['identifier'] + "-img1") if c in digits)))
     question_tokens = tokenize(question,
                         punct_to_keep=[';', ','],
                         punct_to_remove=['?', '.'])
@@ -134,27 +137,14 @@ def main(args):
                          allow_unk=args.encode_unk == 1)
     questions_encoded.append(question_encoded)
 
-    if 'program' in q:
-      program = q['program']
-      program_str = program_to_str(program, args.mode)
-      program_tokens = tokenize(program_str)
-      program_encoded = encode(program_tokens, vocab['program_token_to_idx'])
-      programs_encoded.append(program_encoded)
-
-    if 'answer' in q:
-      answers.append(vocab['answer_token_to_idx'][q['answer']])
+    if 'label' in q:
+      answers.append(vocab['answer_token_to_idx'][q['label']])
 
   # Pad encoded questions and programs
   max_question_length = max(len(x) for x in questions_encoded)
   for qe in questions_encoded:
     while len(qe) < max_question_length:
       qe.append(vocab['question_token_to_idx']['<NULL>'])
-
-  if len(programs_encoded) > 0:
-    max_program_length = max(len(x) for x in programs_encoded)
-    for pe in programs_encoded:
-      while len(pe) < max_program_length:
-        pe.append(vocab['program_token_to_idx']['<NULL>'])
 
   # Create h5 file
   print('Writing output')
@@ -174,6 +164,7 @@ def main(args):
     types_coded += [mapping[t]]
 
   with h5py.File(args.output_h5_file, 'w') as f:
+    print(image_idxs)
     f.create_dataset('questions', data=questions_encoded)
     f.create_dataset('image_idxs', data=np.asarray(image_idxs))
     f.create_dataset('orig_idxs', data=np.asarray(orig_idxs))

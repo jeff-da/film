@@ -344,7 +344,7 @@ def train_loop(args, train_loader, val_loader):
           ee_optimizer.step()
 
       if t % args.record_loss_every == 0:
-        running_loss += loss.data[0]
+        running_loss += loss.item()
         avg_loss = running_loss / args.record_loss_every
         print(t, avg_loss)
         stats['train_losses'].append(avg_loss)
@@ -353,7 +353,7 @@ def train_loop(args, train_loader, val_loader):
           stats['train_rewards'].append(reward)
         running_loss = 0.0
       else:
-        running_loss += loss.data[0]
+        running_loss += loss.item()
 
       if t % args.checkpoint_every == 0:
         num_checkpoints += 1
@@ -589,11 +589,11 @@ def check_accuracy(args, program_generator, execution_engine, baseline_model, lo
     if isinstance(questions, list):
       questions = questions[0]
 
-    questions_var = Variable(questions.cuda(), volatile=True)
-    feats_var = Variable(feats.cuda(), volatile=True)
-    answers_var = Variable(feats.cuda(), volatile=True)
+    questions_var = Variable(questions.cuda())
+    feats_var = Variable(feats.cuda())
+    answers_var = Variable(feats.cuda())
     if programs[0] is not None:
-      programs_var = Variable(programs.cuda(), volatile=True)
+      programs_var = Variable(programs.cuda())
 
     scores = None  # Use this for everything but PG
     if args.model_type == 'PG':

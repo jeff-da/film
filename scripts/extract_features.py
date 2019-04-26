@@ -12,7 +12,8 @@ from tqdm import tqdm
 
 import torch
 import torchvision
-
+import h5py
+from string import digits
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input_image_dir', required=True)
@@ -45,7 +46,7 @@ def build_model(args):
     name = 'layer%d' % (i + 1)
     layers.append(getattr(cnn, name))
   model = torch.nn.Sequential(*layers)
-  model.cuda()
+  # model.cuda()
   model.eval()
   return model
 
@@ -60,7 +61,7 @@ def run_batch(cur_batch, model):
 
   image_batch = np.concatenate(cur_batch, 0).astype(np.float32)
   image_batch = (image_batch / 255.0 - mean) / std
-  image_batch = torch.FloatTensor(image_batch).cuda()
+  image_batch = torch.FloatTensor(image_batch) # .cuda()
   image_batch = torch.autograd.Variable(image_batch, volatile=True)
 
   feats = model(image_batch)
@@ -68,22 +69,48 @@ def run_batch(cur_batch, model):
 
   return feats
 
+def test():
+    # make sure this code is working
+    filename = 'data/train_features.h5'
+    f = h5py.File(filename, 'r')
+
+    # List all groups
+    print("Keys: %s" % f.keys())
+    a_group_key = list(f.keys())[0]
+
+    # Get the data
+    data = list(f[a_group_key])
+    print(data)
 
 def main(args):
   input_paths = []
   idx_set = set()
-  for fn in os.listdir(args.input_image_dir):
-    if not fn.endswith('.png'): continue
-    idx = int(os.path.splitext(fn)[0].split('_')[-1])
-    input_paths.append((os.path.join(args.input_image_dir, fn), idx))
-    idx_set.add(idx)
-  input_paths.sort(key=lambda x: x[1])
-  assert len(idx_set) == len(input_paths)
-  assert min(idx_set) == 0 and max(idx_set) == len(idx_set) - 1
-  if args.max_images is not None:
-    input_paths = input_paths[:args.max_images]
-  print(input_paths[0])
-  print(input_paths[-1])
+  if "train" in args.input_image_dir:
+    for subdirectory in os.listdir(args.input_image_dir):
+      for image_name in os.listdir(os.path.join(args.input_image_dir, subdirectory)):
+        if not image_name.endswith('.png'): continue
+        idx = int(''.join(c for c in image_name if c in digits)) # ex train-9999-0-0-img0 -> 999900
+        print(os.path.join(args.input_image_dir, os.path.join(subdirectory, image_name)))
+        input_paths.append((os.path.join(args.input_image_dir, os.path.join(subdirectory, image_name)), idx))
+        idx_set.add(idx)
+    input_paths.sort(key=lambda x: x[1])
+    assert len(idx_set) == len(input_paths)
+    if args.max_images is not None:
+      input_paths = input_paths[:args.max_images]
+    print(input_paths[0])
+    print(input_paths[-1])
+  else:
+    for image_name in os.listdir(args.input_image_dir):
+      if not image_name.endswith('.png'): continue
+      idx = image_name # ex train-9999-0-0
+      input_paths.append((os.path.join(args.input_image_dir, image_name), idx))
+      idx_set.add(idx)
+    input_paths.sort(key=lambda x: x[1])
+    assert len(idx_set) == len(input_paths)
+    if args.max_images is not None:
+      input_paths = input_paths[:args.max_images]
+    print(input_paths[0])
+    print(input_paths[-1])
 
   model = build_model(args)
 
